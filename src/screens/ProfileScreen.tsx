@@ -41,12 +41,13 @@ import type { TabParamList, RootStackParamList } from "../navigation/types";
 import {
   getUserProfile,
   getPostedItems,
-  clearAllStorage,
   type UserProfile,
   type PostedItem,
 } from "../services/storage";
 import { AnimatedProgressBar, SpringPressable } from "../components/AnimatedComponents";
 import { cardShadow } from "../theme/shadows";
+import { useAuth } from "../contexts/AuthContext";
+import { formatExpiresIn } from "../services/auth";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, "Profile">,
@@ -65,6 +66,7 @@ type ProfileTab = "listings" | "achievements" | "ratings";
 
 export function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { session, logout } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [postedItems, setPostedItems] = useState<PostedItem[]>([]);
   const [activeTab, setActiveTab] = useState<ProfileTab>("listings");
@@ -90,13 +92,13 @@ export function ProfileScreen({ navigation }: Props) {
   }, []);
 
   function handleLogout() {
-    Alert.alert("Sair da conta", "Deseja realmente sair?", [
+    Alert.alert("Encerrar sessão", "Deseja realmente sair da sua conta?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Sair",
         style: "destructive",
         onPress: async () => {
-          await clearAllStorage();
+          await logout();
           (navigation as any).replace("Login");
         },
       },
@@ -244,6 +246,38 @@ export function ProfileScreen({ navigation }: Props) {
             </TouchableOpacity>
           ))}
         </Animated.View>
+
+        {/* ── Sessão ativa ──────────────────────────────────── */}
+        {session && (
+          <Animated.View entering={FadeInUp.delay(280).duration(500)} style={styles.sessionCard}>
+            <View style={styles.sessionHeader}>
+              <Text style={styles.sessionTitle}>🔐 Sessão ativa</Text>
+              <View style={styles.sessionBadge}>
+                <Text style={styles.sessionBadgeText}>Autenticado</Text>
+              </View>
+            </View>
+            <View style={styles.sessionRow}>
+              <Text style={styles.sessionLabel}>Token</Text>
+              <Text style={styles.sessionValue}>{session.token.slice(0, 16)}…</Text>
+            </View>
+            <View style={styles.sessionRow}>
+              <Text style={styles.sessionLabel}>E-mail</Text>
+              <Text style={styles.sessionValue}>{session.email}</Text>
+            </View>
+            <View style={styles.sessionRow}>
+              <Text style={styles.sessionLabel}>Expira em</Text>
+              <Text style={[styles.sessionValue, { color: "#0D5C3D", fontWeight: "700" }]}>
+                {formatExpiresIn(session.expiresAt)}
+              </Text>
+            </View>
+            <View style={styles.sessionRow}>
+              <Text style={styles.sessionLabel}>Criada em</Text>
+              <Text style={styles.sessionValue}>
+                {new Date(session.createdAt).toLocaleDateString("pt-BR")}
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* ── Meus anúncios ─────────────────────────────────── */}
         <Animated.View entering={FadeInUp.delay(300).duration(500)} style={styles.section}>
@@ -445,6 +479,42 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   quickLabel: { fontSize: 12, fontWeight: "600", color: "#374151" },
+
+  // Sessão
+  sessionCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    gap: 10,
+  },
+  sessionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  sessionTitle: { fontSize: 14, fontWeight: "700", color: "#0F172A" },
+  sessionBadge: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 99,
+  },
+  sessionBadgeText: { fontSize: 11, fontWeight: "700", color: "#16A34A" },
+  sessionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  sessionLabel: { fontSize: 12, color: "#64748B", fontWeight: "500" },
+  sessionValue: { fontSize: 12, color: "#0F172A", fontWeight: "600", maxWidth: "60%" },
 
   // Section
   section: { marginHorizontal: 20, marginTop: 24 },

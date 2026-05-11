@@ -23,6 +23,7 @@ import Animated, {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { isOnboardingDone } from "../services/storage";
+import { getSession } from "../services/auth";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Splash">;
 
@@ -49,8 +50,13 @@ export function SplashScreen({ navigation }: Props) {
     });
     taglineOpacity.value = withDelay(500, withTiming(1, { duration: 600 }));
 
-    // Redirecionar após 2.2s
+    // Redirecionar após 2.2s — sessão ativa pula o login diretamente
     const timer = setTimeout(async () => {
+      const session = await getSession();
+      if (session) {
+        navigation.replace("MainApp");
+        return;
+      }
       const done = await isOnboardingDone();
       navigation.replace(done ? "Login" : "Onboarding");
     }, 2200);

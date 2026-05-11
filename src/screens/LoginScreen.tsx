@@ -21,12 +21,13 @@ import { StatusBar } from "expo-status-bar";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
-import { saveUserProfile } from "../services/storage";
 import { SpringPressable } from "../components/AnimatedComponents";
+import { useAuth } from "../contexts/AuthContext";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
 export function LoginScreen({ navigation }: Props) {
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -42,22 +43,15 @@ export function LoginScreen({ navigation }: Props) {
       return;
     }
     setLoading(true);
-    // Simulação de autenticação — persiste dados no AsyncStorage
-    await new Promise((r) => setTimeout(r, 800));
-    const name = email.split("@")[0].replace(/[^a-zA-Z]/g, " ").trim() || "Usuário";
-    const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
-    await saveUserProfile({
-      email,
-      name: capitalizedName,
-      level: 1,
-      xp: 0,
-      streak: 1,
-      itemsListed: 0,
-      tradesCompleted: 0,
-      donationsGiven: 0,
-    });
-    setLoading(false);
-    navigation.replace("MainApp");
+    try {
+      // Cria sessão persistente com token e expiração de 7 dias
+      await login(email.trim(), password);
+      navigation.replace("MainApp");
+    } catch {
+      Alert.alert("Erro ao entrar", "Não foi possível autenticar. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

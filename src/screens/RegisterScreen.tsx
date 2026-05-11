@@ -1,7 +1,7 @@
 /**
  * RegisterScreen.tsx
- * Tela de cadastro de novos usuários.
- * Salva os dados iniciais do perfil via AsyncStorage e navega para o app principal.
+ * Tela de cadastro — integra ViaCEP para auto-completar a cidade ao digitar o CEP.
+ * Usa AuthContext para criar a sessão persistente após o cadastro.
  */
 
 import React, { useState } from "react";
@@ -21,19 +21,59 @@ import { StatusBar } from "expo-status-bar";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
-import { saveUserProfile } from "../services/storage";
 import { SpringPressable } from "../components/AnimatedComponents";
+import { useAuth } from "../contexts/AuthContext";
+import { fetchAddressByCEP } from "../services/api";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 
 export function RegisterScreen({ navigation }: Props) {
+  const { register } = useAuth();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [cep, setCep] = useState("");
   const [city, setCity] = useState("");
+  const [uf, setUf] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepFromCache, setCepFromCache] = useState<boolean | null>(null);
+  const [cepError, setCepError] = useState(false);
+
+  // ─── ViaCEP: busca endereço ao completar 8 dígitos ──────────────────────────
+  async function handleCepChange(value: string) {
+    const digits = value.replace(/\D/g, "").slice(0, 8);
+    const formatted = digits.length > 5
+      ? `${digits.slice(0, 5)}-${digits.slice(5)}`
+      : digits;
+    setCep(formatted);
+    setCepError(false);
+
+    if (digits.length === 8) {
+      setCepLoading(true);
+      setCepFromCache(null);
+      const result = await fetchAddressByCEP(digits);
+      setCepLoading(false);
+
+      if (result.data) {
+        setCity(result.data.localidade);
+        setUf(result.data.uf);
+        setCepFromCache(result.fromCache);
+        setCepError(false);
+      } else {
+        setCity("");
+        setUf("");
+        setCepError(true);
+      }
+    } else if (digits.length < 8) {
+      setCity("");
+      setUf("");
+      setCepFromCache(null);
+    }
+  }
 
   async function handleRegister() {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -54,30 +94,19 @@ export function RegisterScreen({ navigation }: Props) {
     }
 
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    // Persiste perfil inicial no AsyncStorage
-    await saveUserProfile({
-      name: name.trim(),
-      email: email.trim(),
-      city: city.trim(),
-      bio: "",
-      avatarUri: null,
-      level: 1,
-      xp: 100, // bônus de cadastro
-      streak: 0,
-      itemsListed: 0,
-      tradesCompleted: 0,
-      donationsGiven: 0,
-      createdAt: new Date().toISOString(),
-    });
-
-    setLoading(false);
-    Alert.alert(
-      "Bem-vindo ao ReUse! 🌱",
-      `Oi, ${name.trim().split(" ")[0]}! Sua conta foi criada com sucesso.`,
-      [{ text: "Começar!", onPress: () => navigation.replace("MainApp") }]
-    );
+    try {
+      const location = city && uf ? `${city}, ${uf}` : city || "";
+      await register(name.trim(), email.trim(), location, password);
+      Alert.alert(
+        "Bem-vindo ao ReUse! 🌱",
+        `Oi, ${name.trim().split(" ")[0]}! Sua conta foi criada com sucesso.`,
+        [{ text: "Começar!", onPress: () => navigation.replace("MainApp") }]
+      );
+    } catch {
+      Alert.alert("Erro no cadastro", "Não foi possível criar a conta. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -150,19 +179,65 @@ export function RegisterScreen({ navigation }: Props) {
             </View>
           </View>
 
-          {/* Cidade */}
+          {/* CEP — busca automática via ViaCEP */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Cidade (opcional)</Text>
-            <View style={styles.inputWrap}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>CEP (opcional)</Text>
+              {cepFromCache === true && (
+                <View style={styles.cacheBadge}>
+                  <Text style={styles.cacheBadgeText}>📦 cache</Text>
+                </View>
+              )}
+              {cepFromCache === false && (
+                <View style={[styles.cacheBadge, styles.cacheBadgeFresh]}>
+                  <Text style={styles.cacheBadgeText}>🌐 API</Text>
+                </View>
+              )}
+            </View>
+            <View style={[styles.inputWrap, cepError && styles.inputError]}>
+              <Text style={styles.inputIcon}>📮</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="00000-000"
+                placeholderTextColor="#94A3B8"
+                value={cep}
+                onChangeText={handleCepChange}
+                keyboardType="numeric"
+                maxLength={9}
+                returnKeyType="next"
+              />
+              {cepLoading && <ActivityIndicator size="small" color="#0D5C3D" />}
+              {!cepLoading && cepError && (
+                <Text style={{ fontSize: 16 }}>❌</Text>
+              )}
+              {!cepLoading && cepFromCache !== null && !cepError && (
+                <Text style={{ fontSize: 16 }}>✅</Text>
+              )}
+            </View>
+            {cepError && (
+              <Text style={styles.fieldHint}>CEP não encontrado. Digite a cidade manualmente.</Text>
+            )}
+            {cepFromCache !== null && !cepError && (
+              <Text style={styles.fieldHint}>
+                Endereço carregado {cepFromCache ? "do cache local" : "via ViaCEP API"}
+              </Text>
+            )}
+          </View>
+
+          {/* Cidade — preenchida automaticamente pelo CEP */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Cidade</Text>
+            <View style={[styles.inputWrap, uf ? styles.inputFilled : undefined]}>
               <Text style={styles.inputIcon}>📍</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Ex: São Paulo, SP"
+                placeholder="Ex: São Paulo"
                 placeholderTextColor="#94A3B8"
                 value={city}
                 onChangeText={setCity}
                 returnKeyType="next"
               />
+              {uf ? <Text style={styles.ufBadge}>{uf}</Text> : null}
             </View>
           </View>
 
@@ -189,10 +264,12 @@ export function RegisterScreen({ navigation }: Props) {
           {/* Confirmar senha */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Confirmar senha</Text>
-            <View style={[
-              styles.inputWrap,
-              confirmPassword && confirmPassword !== password && styles.inputError,
-            ]}>
+            <View
+              style={[
+                styles.inputWrap,
+                confirmPassword && confirmPassword !== password && styles.inputError,
+              ]}
+            >
               <Text style={styles.inputIcon}>🔒</Text>
               <TextInput
                 style={styles.input}
@@ -251,12 +328,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { marginBottom: 20 },
   backBtnText: { fontSize: 15, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    marginBottom: 8,
-  },
+  headerTitle: { fontSize: 28, fontWeight: "800", color: "#FFFFFF", marginBottom: 8 },
   headerSub: { fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 20 },
   card: {
     backgroundColor: "#FFFFFF",
@@ -285,7 +357,17 @@ const styles = StyleSheet.create({
   bonusEmoji: { fontSize: 22 },
   bonusText: { fontSize: 14, fontWeight: "600", color: "#92400E", flex: 1 },
   fieldGroup: { marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8 },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  label: { fontSize: 14, fontWeight: "600", color: "#374151" },
+  cacheBadge: {
+    backgroundColor: "#E0F2FE",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 99,
+  },
+  cacheBadgeFresh: { backgroundColor: "#DCFCE7" },
+  cacheBadgeText: { fontSize: 10, fontWeight: "700", color: "#0369A1" },
+  fieldHint: { fontSize: 11, color: "#64748B", marginTop: 5, marginLeft: 2 },
   inputWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -297,10 +379,20 @@ const styles = StyleSheet.create({
     height: 52,
     gap: 10,
   },
+  inputFilled: { borderColor: "#0D5C3D", backgroundColor: "#F0FDF4" },
   inputError: { borderColor: "#FCA5A5", backgroundColor: "#FFF5F5" },
   inputIcon: { fontSize: 18 },
   input: { flex: 1, fontSize: 15, color: "#0F172A" },
   eyeBtn: { padding: 4 },
+  ufBadge: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0D5C3D",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
   registerButton: {
     backgroundColor: "#0D5C3D",
     borderRadius: 14,

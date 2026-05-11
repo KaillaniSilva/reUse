@@ -1,15 +1,13 @@
 /**
  * MarketplaceScreen.tsx
- * Feed principal do ReUse — lista de itens disponíveis para doação, venda e troca.
+ * Feed principal do ReUse.
  *
- * UI/UX mobile aplicados:
- *  - Barra de busca com debounce
- *  - Chips de categorias com scroll horizontal
- *  - FlatList em 2 colunas com skeleton loading
- *  - Pull to refresh
- *  - Estado vazio ilustrado
- *  - Badge de notificação no ícone de sino
- *  - Cards com tag de tipo (doação / venda / troca) e badge "Destaque"
+ * Fase 3 — APIs integradas:
+ *  - Random User API: carrega avatares reais dos vendedores (cache 24h)
+ *  - Lorem Picsum:    imagens de placeholder para os itens no card
+ *
+ * Recursos anteriores mantidos:
+ *  - Busca com debounce, chips de categoria, skeleton loading, pull to refresh
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -24,6 +22,7 @@ import {
   Pressable,
   Dimensions,
   ListRenderItem,
+  Image,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,6 +40,8 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { CATEGORIES, MOCK_ITEMS, type MarketItem } from "../data/mockData";
 import { getFavorites } from "../services/storage";
+import { fetchRandomUsers, getItemImageUrl, type RandomUser } from "../services/api";
+import { formatCacheAge } from "../services/cache";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, "Marketplace">,
@@ -50,7 +51,7 @@ type Props = CompositeScreenProps<
 const { width: SCREEN_W } = Dimensions.get("window");
 const CARD_W = (SCREEN_W - 48) / 2;
 
-// ─── Componente de Skeleton ────────────────────────────────────────────────────
+// ─── Skeleton de carregamento ──────────────────────────────────────────────────
 function SkeletonCard() {
   const opacity = useSharedValue(0.4);
   const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
@@ -76,18 +77,21 @@ function SkeletonCard() {
   );
 }
 
-// ─── Componente de Card do Item ────────────────────────────────────────────────
+// ─── Card do item ─────────────────────────────────────────────────────────────
 function ItemCard({
   item,
   index,
   isFav,
+  avatarUrl,
   onPress,
 }: {
   item: MarketItem;
   index: number;
   isFav: boolean;
+  avatarUrl?: string;
   onPress: () => void;
 }) {
+  const [imageError, setImageError] = useState(false);
   const TYPE_CONFIG = {
     doação: { color: "#16A34A", bg: "#DCFCE7", label: "Doação" },
     venda:  { color: "#2563EB", bg: "#DBEAFE", label: "Venda" },
@@ -95,15 +99,25 @@ function ItemCard({
   };
   const typeConf = TYPE_CONFIG[item.type];
 
+  const itemImageUrl = getItemImageUrl(item.id);
+
   return (
     <Animated.View entering={ZoomIn.delay(index * 60).duration(350).springify().damping(14)}>
       <Pressable
         style={({ pressed }) => [styles.itemCard, pressed && { opacity: 0.85 }]}
         onPress={onPress}
       >
-        {/* Imagem / preview */}
+        {/* Imagem do item via Picsum (com fallback para emoji) */}
         <View style={[styles.itemImageWrap, { backgroundColor: item.bgColor }]}>
-          <Text style={styles.itemEmoji}>{item.emoji}</Text>
+          {!imageError ? (
+            <Image
+              source={{ uri: itemImageUrl }}
+              style={styles.itemImage}
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <Text style={styles.itemEmoji}>{item.emoji}</Text>
+          )}
           {item.isFeatured && (
             <View style={styles.featuredBadge}>
               <Text style={styles.featuredBadgeText}>⭐ Destaque</Text>
@@ -118,7 +132,6 @@ function ItemCard({
 
         {/* Info */}
         <View style={styles.itemInfo}>
-          {/* Tag de tipo */}
           <View style={[styles.typePill, { backgroundColor: typeConf.bg }]}>
             <Text style={[styles.typePillText, { color: typeConf.color }]}>
               {typeConf.label}
@@ -127,11 +140,20 @@ function ItemCard({
 
           <Text style={styles.itemTitle} numberOfLines={2}>{item.title}</Text>
 
-          <Text style={styles.itemLocation} numberOfLines={1}>
-            📍 {item.location}
-          </Text>
+          {/* Vendedor com avatar real (Random User API) */}
+          <View style={styles.sellerRow}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.sellerAvatar} />
+            ) : (
+              <View style={[styles.sellerAvatarPlaceholder]}>
+                <Text style={{ fontSize: 10 }}>{item.userAvatar}</Text>
+              </View>
+            )}
+            <Text style={styles.sellerName} numberOfLines={1}>{item.userName}</Text>
+          </View>
 
-          {/* Preço / tipo */}
+          <Text style={styles.itemLocation} numberOfLines={1}>📍 {item.location}</Text>
+
           <View style={styles.priceRow}>
             <Text style={styles.itemPrice}>
               {item.type === "doação" ? "Grátis" : `R$ ${item.price.toLocaleString("pt-BR")}`}
@@ -155,16 +177,31 @@ export function MarketplaceScreen({ navigation }: Props) {
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // Random User API — avatares dos vendedores
+  const [avatars, setAvatars] = useState<RandomUser[]>([]);
+  const [avatarsFromCache, setAvatarsFromCache] = useState<boolean | null>(null);
+  const [avatarsCachedAt, setAvatarsCachedAt] = useState<number | undefined>(undefined);
+  const [avatarsLoading, setAvatarsLoading] = useState(false);
+
   useEffect(() => {
-    // Simula carregamento inicial
-    const t = setTimeout(() => setLoading(false), 1000);
+    const t = setTimeout(() => setLoading(false), 800);
     loadFavorites();
+    loadAvatars();
     return () => clearTimeout(t);
   }, []);
 
   async function loadFavorites() {
     const favs = await getFavorites();
     setFavorites(favs);
+  }
+
+  async function loadAvatars() {
+    setAvatarsLoading(true);
+    const result = await fetchRandomUsers(MOCK_ITEMS.length, "reuse2025");
+    setAvatars(result.data);
+    setAvatarsFromCache(result.fromCache);
+    setAvatarsCachedAt(result.cachedAt);
+    setAvatarsLoading(false);
   }
 
   function handleSearchChange(text: string) {
@@ -176,11 +213,11 @@ export function MarketplaceScreen({ navigation }: Props) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadFavorites();
-    await new Promise((r) => setTimeout(r, 800));
+    await loadAvatars();
+    await new Promise((r) => setTimeout(r, 600));
     setRefreshing(false);
   }, []);
 
-  // Filtragem dos itens
   const filteredItems = MOCK_ITEMS.filter((item) => {
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
     const matchesSearch =
@@ -190,18 +227,23 @@ export function MarketplaceScreen({ navigation }: Props) {
     return matchesCategory && matchesSearch;
   });
 
-  const renderItem: ListRenderItem<MarketItem> = ({ item, index }) => (
-    <View style={{ width: CARD_W, marginBottom: 12 }}>
-      <ItemCard
-        item={item}
-        index={index}
-        isFav={favorites.includes(item.id)}
-        onPress={() =>
-          (navigation as any).navigate("ItemDetail", { itemId: item.id })
-        }
-      />
-    </View>
-  );
+  const renderItem: ListRenderItem<MarketItem> = ({ item, index }) => {
+    const originalIndex = MOCK_ITEMS.findIndex((m) => m.id === item.id);
+    const avatar = avatars[originalIndex];
+    return (
+      <View style={{ width: CARD_W, marginBottom: 12 }}>
+        <ItemCard
+          item={item}
+          index={index}
+          isFav={favorites.includes(item.id)}
+          avatarUrl={avatar?.picture.thumbnail}
+          onPress={() =>
+            (navigation as any).navigate("ItemDetail", { itemId: item.id })
+          }
+        />
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -274,6 +316,22 @@ export function MarketplaceScreen({ navigation }: Props) {
         />
       </Animated.View>
 
+      {/* Barra de status de API/cache */}
+      {avatarsFromCache !== null && (
+        <View style={styles.apiStatusBar}>
+          <Text style={styles.apiStatusText}>
+            {avatarsLoading
+              ? "🌐 Buscando avatares..."
+              : avatarsFromCache
+              ? `📦 Avatares em cache · ${avatarsCachedAt ? formatCacheAge(avatarsCachedAt) : ""}`
+              : "🌐 Avatares via Random User API"}
+          </Text>
+          <Text style={styles.apiStatusText}>
+            🖼️ Imagens via Picsum
+          </Text>
+        </View>
+      )}
+
       {/* Contagem */}
       <View style={styles.countRow}>
         <Text style={styles.countText}>
@@ -294,7 +352,6 @@ export function MarketplaceScreen({ navigation }: Props) {
           ))}
         </View>
       ) : filteredItems.length === 0 ? (
-        // Estado vazio
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>🔍</Text>
           <Text style={styles.emptyTitle}>Nenhum item encontrado</Text>
@@ -389,13 +446,22 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     gap: 6,
   },
-  categoryChipActive: {
-    backgroundColor: "#0D5C3D",
-    borderColor: "#0D5C3D",
-  },
+  categoryChipActive: { backgroundColor: "#0D5C3D", borderColor: "#0D5C3D" },
   categoryChipEmoji: { fontSize: 16 },
   categoryChipLabel: { fontSize: 13, fontWeight: "600", color: "#64748B" },
   categoryChipLabelActive: { color: "#FFFFFF" },
+
+  // Barra de status da API
+  apiStatusBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: "#F0FDF4",
+    borderBottomWidth: 1,
+    borderBottomColor: "#BBF7D0",
+  },
+  apiStatusText: { fontSize: 10, color: "#166534", fontWeight: "600" },
 
   // Contagem
   countRow: {
@@ -444,7 +510,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    overflow: "hidden",
   },
+  itemImage: { width: "100%", height: "100%", resizeMode: "cover" },
   itemEmoji: { fontSize: 52 },
   featuredBadge: {
     position: "absolute",
@@ -475,10 +543,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 99,
-    marginBottom: 6,
+    marginBottom: 5,
   },
   typePillText: { fontSize: 10, fontWeight: "700" },
-  itemTitle: { fontSize: 13, fontWeight: "700", color: "#0F172A", lineHeight: 18, marginBottom: 4 },
+  itemTitle: { fontSize: 13, fontWeight: "700", color: "#0F172A", lineHeight: 18, marginBottom: 5 },
+
+  // Vendedor
+  sellerRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 },
+  sellerAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  sellerAvatarPlaceholder: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sellerName: { fontSize: 10, color: "#64748B", flex: 1 },
+
   itemLocation: { fontSize: 11, color: "#94A3B8", marginBottom: 6 },
   priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   itemPrice: { fontSize: 14, fontWeight: "800", color: "#0D5C3D" },

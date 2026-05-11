@@ -16,6 +16,7 @@ import "./global.css";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AuthProvider } from "./src/contexts/AuthContext";
 
 import type { RootStackParamList } from "./src/navigation/types";
 import { AppNavigator } from "./src/navigation/AppNavigator";
@@ -40,6 +41,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
+    <AuthProvider>
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator
@@ -126,5 +128,6 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
+    </AuthProvider>
   );
 }
