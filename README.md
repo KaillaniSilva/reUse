@@ -108,6 +108,15 @@ Depois: **Expo Go** no celular (escanear QR code) ou:
 
 ---
 
+## Versão Web (Next.js + Prisma + PostgreSQL)
+
+Este repositório também contém a versão web da plataforma, em [web/](web/),
+construída com Next.js e integrada a um banco PostgreSQL via Prisma ORM.
+Veja [web/README.md](web/README.md) para detalhes das telas, do uso do
+Prisma e das tabelas do banco.
+
+---
+
 ## Próximos passos (fora desta Sprint)
 
 - Backend, APIs e persistência
