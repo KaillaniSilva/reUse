@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# arquivos gerados automaticamente por ferramentas de agente de IA
+AGENTS.md
+CLAUDE.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
