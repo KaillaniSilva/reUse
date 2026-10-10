@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { InteresseForm } from "@/components/InteresseForm";
+import { formatNumber, impactForCategory } from "@/lib/impact";
 import { toggleFavoriteAction, responderInteresseAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export default async function ItemDetailPage({
   if (!item) notFound();
 
   const isOwner = user?.id === item.owner.id;
+  const impact = impactForCategory(item.category.slug);
 
   const isFavorited = user
     ? Boolean(
@@ -95,7 +97,27 @@ export default async function ItemDetailPage({
           </span>
         </div>
 
+        {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.imageUrl}
+            alt={item.title}
+            className="mt-6 max-h-96 w-full rounded-xl object-cover"
+          />
+        ) : null}
+
         <p className="mt-6 leading-relaxed text-slate-600">{item.description}</p>
+
+        <div className="mt-6 rounded-xl border border-brand-border bg-brand-surface p-4">
+          <p className="text-sm font-bold text-brand">
+            🌱 Impacto ao reutilizar este item (estimativa)
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            <ImpactStat value={formatNumber(impact.co2Kg)} unit="kg CO₂ evitados" />
+            <ImpactStat value={formatNumber(impact.waterL)} unit="litros de água" />
+            <ImpactStat value={formatNumber(impact.wasteKg)} unit="kg de lixo" />
+          </div>
+        </div>
 
         <div className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Publicado por <span className="font-semibold">{item.owner.name}</span>
@@ -121,6 +143,15 @@ export default async function ItemDetailPage({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ImpactStat({ value, unit }: { value: string; unit: string }) {
+  return (
+    <div>
+      <p className="text-lg font-extrabold text-brand">{value}</p>
+      <p className="text-xs text-slate-600">{unit}</p>
     </div>
   );
 }

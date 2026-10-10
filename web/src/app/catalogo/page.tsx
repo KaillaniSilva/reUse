@@ -76,6 +76,10 @@ export default async function CatalogoPage({
         ))}
       </div>
 
+      <p className="mb-4 text-sm text-muted" aria-live="polite">
+        {itens.length} {itens.length === 1 ? "item encontrado" : "itens encontrados"}
+      </p>
+
       {itens.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-brand-border p-12 text-center text-muted">
           Nenhum item encontrado com esse filtro.
@@ -93,6 +97,8 @@ export default async function CatalogoPage({
               status={item.status}
               categoryName={item.category.name}
               categoryIcon={item.category.icon}
+              categorySlug={item.category.slug}
+              imageUrl={item.imageUrl}
               ownerCity={item.owner.city}
             />
           ))}

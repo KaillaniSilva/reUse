@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatNumber, impactForCategory } from "@/lib/impact";
 
 type ItemCardProps = {
   id: string;
@@ -9,6 +10,8 @@ type ItemCardProps = {
   status: "DISPONIVEL" | "RESERVADO" | "DOADO";
   categoryName: string;
   categoryIcon: string;
+  categorySlug: string;
+  imageUrl?: string | null;
   ownerCity?: string | null;
 };
 
@@ -38,32 +41,54 @@ export function ItemCard({
   status,
   categoryName,
   categoryIcon,
+  categorySlug,
+  imageUrl,
   ownerCity,
 }: ItemCardProps) {
+  const impact = impactForCategory(categorySlug);
+
   return (
     <Link
       href={`/catalogo/${id}`}
-      className="flex flex-col rounded-2xl border border-brand-border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-brand-border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-surface text-xl">
-          {categoryIcon}
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle[status]}`}>
+      <div className="relative flex h-40 items-center justify-center bg-brand-surface">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={title}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="text-5xl" aria-hidden="true">
+            {categoryIcon}
+          </span>
+        )}
+        <span
+          className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle[status]}`}
+        >
           {statusLabel[status]}
         </span>
       </div>
-      <h3 className="mt-3 line-clamp-1 font-bold text-slate-900">{title}</h3>
-      <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted">
-        {description}
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500">
-        <span className="rounded-full bg-slate-100 px-2.5 py-1">{categoryName}</span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1">{tipoLabel[tipo]}</span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1">{condition}</span>
-        {ownerCity ? (
-          <span className="rounded-full bg-slate-100 px-2.5 py-1">📍 {ownerCity}</span>
-        ) : null}
+
+      <div className="flex flex-1 flex-col p-5">
+        <h3 className="line-clamp-1 font-bold text-slate-900">{title}</h3>
+        <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted">
+          {description}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
+          <span className="rounded-full bg-slate-100 px-2.5 py-1">{categoryName}</span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1">{tipoLabel[tipo]}</span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-1">{condition}</span>
+          {ownerCity ? (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1">📍 {ownerCity}</span>
+          ) : null}
+        </div>
+        <p className="mt-4 text-xs font-semibold text-brand">
+          🌱 Evita ~{formatNumber(impact.co2Kg)} kg de CO₂
+        </p>
       </div>
     </Link>
   );

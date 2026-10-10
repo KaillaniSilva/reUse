@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { formatNumber, sumImpact } from "@/lib/impact";
 import { marcarComoDoadoAction, excluirItemAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,9 @@ export default async function PerfilPage() {
     }),
   ]);
 
+  const itensDoados = meusItens.filter((item) => item.status === "DOADO");
+  const impacto = sumImpact(itensDoados.map((item) => item.category.slug));
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
       <div className="rounded-2xl border border-brand-border bg-white p-6 shadow-sm">
@@ -48,6 +52,27 @@ export default async function PerfilPage() {
           Membro desde {user.createdAt.toLocaleDateString("pt-BR")}
         </p>
       </div>
+
+      <section className="mt-6 rounded-2xl border border-brand-border bg-brand-surface p-6">
+        <h2 className="text-lg font-bold text-brand">🌱 Seu impacto</h2>
+        <p className="mt-1 text-xs text-muted">
+          Estimativa com base nos {itensDoados.length} item(ns) que você já doou ou trocou.
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+          <div>
+            <p className="text-2xl font-extrabold text-brand">{formatNumber(impacto.co2Kg)}</p>
+            <p className="text-xs text-slate-600">kg de CO₂ evitados</p>
+          </div>
+          <div>
+            <p className="text-2xl font-extrabold text-brand">{formatNumber(impacto.waterL)}</p>
+            <p className="text-xs text-slate-600">litros de água</p>
+          </div>
+          <div>
+            <p className="text-2xl font-extrabold text-brand">{formatNumber(impacto.wasteKg)}</p>
+            <p className="text-xs text-slate-600">kg de lixo evitados</p>
+          </div>
+        </div>
+      </section>
 
       <Section title="Meus itens publicados" action={{ href: "/publicar", label: "+ Publicar novo item" }}>
         {meusItens.length === 0 ? (

@@ -76,6 +76,22 @@ export async function Header() {
           )}
         </div>
       </div>
+
+      <nav
+        aria-label="Navegação principal"
+        className="flex items-center justify-center gap-6 border-t border-brand-border px-6 py-2 sm:hidden"
+      >
+        {navLinks.map((link) => (
+          <Link key={link.href} href={link.href} className="text-sm font-medium text-slate-600">
+            {link.label}
+          </Link>
+        ))}
+        {user ? (
+          <Link href="/publicar" className="text-sm font-semibold text-brand">
+            Publicar
+          </Link>
+        ) : null}
+      </nav>
     </header>
   );
 }
